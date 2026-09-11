@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Biedronka",
+        "description": "Zaloguj się przez dodatek Browser Companion (Chromium w pasku bocznym). Captcha i SMS zostają w tej przeglądarce."
+      },
+      "companion": {
+        "title": "Browser Companion",
+        "description": "Otwórz Browser Companion w nowym oknie:\n\n[{companion_url}]({companion_href})\n\nTam captcha, numer i SMS. Ten ekran czeka na przekierowanie app://."
+      },
+      "companion_failed": {
+        "title": "Browser Companion",
+        "description": "Nie udało się zalogować przez Browser Companion. Uruchom dodatek i zatwierdź, żeby spróbować ponownie.\n\n[{companion_url}]({companion_href})"
+      }
+    },
+    "error": {
+      "cannot_connect": "Nie udało się połączyć z serwerami Biedronki.",
+      "invalid_token": "Token odrzucony. Zaloguj się ponownie.",
+      "companion_unavailable": "Browser Companion nie przechwycił logowania. Uruchom dodatek i spróbuj ponownie."
+    },
+    "abort": {
+      "already_configured": "Ta karta lojalnościowa jest już skonfigurowana.",
+      "reauth_successful": "Ponowne logowanie zakończone.",
+      "wrong_account": "Ten token należy do innej karty lojalnościowej.",
+      "cannot_connect": "Nie udało się połączyć z serwerami Biedronki.",
+      "invalid_token": "Przechwycone logowanie zostało odrzucone. Spróbuj ponownie.",
+      "companion_requires_supervisor": "Biedronka wymaga Home Assistant OS albo Supervised z dodatkiem Browser Companion.",
+      "companion_not_running": "Uruchom dodatek Browser Companion, a potem dodaj tę integrację ponownie."
+    },
+    "progress": {
+      "companion_wait": "Otwórz Browser Companion w nowym oknie:\n\n[{companion_url}]({companion_href})\n\nZaloguj się tam (captcha + SMS). Ten ekran zaktualizuje się po przechwyceniu przekierowania."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje Biedronki",
+        "data": {
+          "scan_interval": "Interwał odświeżania",
+          "auto_shakeomat": "Automatycznie aktywuj oferty Shakeomatu"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "card": {
+        "name": "Karta lojalnościowa"
+      },
+      "last_transaction": {
+        "name": "Ostatnia transakcja"
+      },
+      "today_spend": {
+        "name": "Dzisiejsze wydatki"
+      },
+      "receipts": {
+        "name": "Ostatnie paragony"
+      },
+      "shakeomat": {
+        "name": "Shakeomat"
+      },
+      "shakeomat_available": {
+        "name": "Shakeomaty do odebrania"
+      },
+      "shakeomat_last_offer": {
+        "name": "Ostatnia oferta Shakeomatu"
+      }
+    },
+    "button": {
+      "shakeomat_activate": {
+        "name": "Odbierz Shakeomaty"
+      }
+    },
+    "switch": {
+      "auto_shakeomat": {
+        "name": "Auto Shakeomat"
+      }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Biedronka",
+        "description": "Sign in with the Browser Companion add-on (Chromium in the sidebar). Captcha and SMS stay in that browser."
+      },
+      "companion": {
+        "title": "Browser Companion",
+        "description": "Open Browser Companion in a new window:\n\n[{companion_url}]({companion_href})\n\nComplete captcha, phone and SMS there. This screen waits for the app:// redirect."
+      },
+      "companion_failed": {
+        "title": "Browser Companion",
+        "description": "Could not sign in with Browser Companion. Start the add-on, then submit to try again.\n\n[{companion_url}]({companion_href})"
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Biedronka servers.",
+      "invalid_token": "Token was rejected. Sign in again.",
+      "companion_unavailable": "Browser Companion did not capture the login. Start the add-on and try again."
+    },
+    "abort": {
+      "already_configured": "This loyalty card is already configured.",
+      "reauth_successful": "Re-authentication successful.",
+      "wrong_account": "This token belongs to a different loyalty card.",
+      "cannot_connect": "Could not reach Biedronka servers.",
+      "invalid_token": "The captured login was rejected. Try again.",
+      "companion_requires_supervisor": "Biedronka needs Home Assistant OS or Supervised with the Browser Companion add-on.",
+      "companion_not_running": "Start the Browser Companion add-on, then add this integration again."
+    },
+    "progress": {
+      "companion_wait": "Open Browser Companion in a new window:\n\n[{companion_url}]({companion_href})\n\nSign in there (captcha + SMS). This screen updates when the redirect is captured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Biedronka options",
+        "data": {
+          "scan_interval": "Update interval",
+          "auto_shakeomat": "Automatically activate Shakeomat offers"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "card": {
+        "name": "Loyalty card"
+      },
+      "last_transaction": {
+        "name": "Last transaction"
+      },
+      "today_spend": {
+        "name": "Today's spend"
+      },
+      "receipts": {
+        "name": "Recent receipts"
+      },
+      "shakeomat": {
+        "name": "Shakeomat"
+      },
+      "shakeomat_available": {
+        "name": "Shakeomats ready"
+      },
+      "shakeomat_last_offer": {
+        "name": "Last Shakeomat offer"
+      }
+    },
+    "button": {
+      "shakeomat_activate": {
+        "name": "Reveal Shakeomats"
+      }
+    },
+    "switch": {
+      "auto_shakeomat": {
+        "name": "Auto Shakeomat"
+      }
+    }
+  }
+}
