@@ -127,7 +127,7 @@ class BiedronkaTodaySpendSensor(BiedronkaEntity, SensorEntity):
 
 
 class BiedronkaReceiptsSensor(BiedronkaEntity, SensorEntity):
-    """Up to five most recent receipts, with full JSON kept in attributes."""
+    """Up to five most recent receipts, with slim fiscal lines in attributes."""
 
     _attr_translation_key = "receipts"
     _attr_state_class = SensorStateClass.MEASUREMENT

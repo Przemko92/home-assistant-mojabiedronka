@@ -37,6 +37,7 @@ from .models import (
     Receipt,
     ShakeomatOffer,
     ShakeomatReward,
+    slim_receipt_lines,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -132,7 +133,11 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
         transactions = list(tx_page.get("transactions") or []) if isinstance(tx_page, dict) else []
         last = transactions[0] if transactions else None
         receipts = await self._sync_receipts(transactions)
-        details = receipts[0].payload if receipts and isinstance(receipts[0].payload, dict) else None
+        details = (
+            receipts[0].payload
+            if receipts and isinstance(receipts[0].payload, dict)
+            else None
+        )
 
         today_total = await self._today_total(transactions, tx_page if isinstance(tx_page, dict) else {})
         shakeomats = await self._load_shakeomats()
@@ -345,7 +350,8 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
             receipt_num=tx.get("receipt_num") or details.get("receipt_num"),
             total_price=total_price,
             source=source,
-            payload=payload,
+            lines=slim_receipt_lines(payload),
+            payload=payload if source == RECEIPT_SOURCE_DETAILS else None,
         )
 
     def _prune_rewards(self) -> None:

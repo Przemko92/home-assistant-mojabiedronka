@@ -57,13 +57,13 @@ The official app **never shows** `refresh_token` in settings — that is expecte
 | --- | --- |
 | `sensor.biedronka_*_karta` / Loyalty card | Card number |
 | Last transaction | Amount in PLN, store, receipt, line items (EAN) |
-| Recent receipts | Up to 5 recent receipts as JSON (e-receipt or transaction details); full payload in the `receipts` attribute. Fetched on startup and on refresh |
+| Recent receipts | Up to 5 recent receipts in the `receipts` attribute (id, date, store, number, total, source, and slim fiscal lines). Fetched on startup and on refresh |
 | Today's spend | Sum from today's receipts |
 | Shakeomat | Nearest offer: `available` / `cooldown` / `expired` / `claimed` / `none`; full list in the `offers` attribute |
 | Shakeomats ready | How many offers can be claimed right now |
 | Last Shakeomat offer | Name of the last claimed reward; previous ones in the `history` attribute |
 | Reveal Shakeomats | `PATCH …/offers/{id}/reveal-and-activate/` for each available offer |
-| Auto Shakeomat | On by default — uses the daily limit the same way as the phone |
+| Auto Shakeomat | Off by default — when enabled, uses the daily limit the same way as the phone |
 
 There are no separate “Shakeomat 1” and “Shakeomat 2” entities. The API can return further offers under the same `SHAKEOMAT` type, and besides the two daily ones there are sometimes extras (including `SHAKEOMARKA`), so the number of offers varies and the integration handles any count. Old slot-based entities are removed from the registry on startup.
 
@@ -134,13 +134,13 @@ Oficjalna apka **nigdy nie pokazuje** `refresh_token` w ustawieniach — to norm
 | --- | --- |
 | `sensor.biedronka_*_karta` / Loyalty card | Numer karty |
 | Ostatnia transakcja | Kwota PLN, sklep, paragon, pozycje (EAN) |
-| Ostatnie paragony | Do 5 ostatnich paragonów JSON (e-paragon albo szczegóły transakcji); pełny payload w atrybucie `receipts`. Pobierane przy starcie i przy odświeżeniu |
+| Ostatnie paragony | Do 5 ostatnich paragonów w atrybucie `receipts` (id, data, sklep, numer, suma, źródło i okrojone linie fiskalne). Pobierane przy starcie i przy odświeżeniu |
 | Dzisiejsze wydatki | Suma z dzisiejszych paragonów |
 | Shakeomat | Najbliższa oferta: `available` / `cooldown` / `expired` / `claimed` / `none`, pełna lista w atrybucie `offers` |
 | Shakeomaty do odebrania | Ile ofert można odebrać w tej chwili |
 | Ostatnia oferta Shakeomatu | Nazwa ostatnio odebranej nagrody, wcześniejsze w atrybucie `history` |
 | Odbierz Shakeomaty | `PATCH …/offers/{id}/reveal-and-activate/` dla każdej dostępnej oferty |
-| Auto Shakeomat | Domyślnie włączony — zużywa dzienny limit tak samo jak telefon |
+| Auto Shakeomat | Domyślnie wyłączony — po włączeniu zużywa dzienny limit tak samo jak telefon |
 
 Nie ma osobnych encji „Shakeomat 1” i „Shakeomat 2”. API potrafi podać kolejne oferty pod tym samym typem `SHAKEOMAT`, a poza dwiema dobowymi bywają dodatkowe (również `SHAKEOMARKA`), więc liczba ofert jest zmienna i integracja obsługuje ich dowolnie wiele. Stare encje ze slotami są usuwane z rejestru przy starcie.
 

@@ -31,7 +31,7 @@ CONF_AUTO_SHAKEOMAT: Final = "auto_shakeomat"
 CONF_CARD_NUMBER: Final = "card_number"
 
 DEFAULT_SCAN_INTERVAL = timedelta(minutes=15)
-DEFAULT_AUTO_SHAKEOMAT: Final = True
+DEFAULT_AUTO_SHAKEOMAT: Final = False
 
 PLATFORMS: Final = ["sensor", "button", "switch"]
 
