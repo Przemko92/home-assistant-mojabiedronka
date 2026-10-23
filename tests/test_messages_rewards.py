@@ -1,5 +1,7 @@
 """App messages, sticker movements, ready rewards and the product services."""
 
+from datetime import timedelta
+
 import pytest
 from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -98,7 +100,9 @@ async def test_failed_first_inbox_load_does_not_flood_later(
     assert hass.states.get("sensor.moja_biedronka_1234_messages").state == "1"
 
 
-async def test_stickers_and_ready_reward_events(hass, entry, enable_custom_integrations):
+async def test_stickers_and_ready_reward_events(
+    hass, entry, enable_custom_integrations, freezer
+):
     api = OffersApi({J4U: []})
     api.loyalty = [STICKERS]
     api.wallets_payload = [{"perspectiv_id": "Wallet100", "balance": 8}]
@@ -133,10 +137,15 @@ async def test_stickers_and_ready_reward_events(hass, entry, enable_custom_integ
     )
     first_fired = reward.state
 
+    # Event state is the trigger time truncated to milliseconds. Step the clock
+    # so a later announcement cannot land on the same state string.
+    freezer.tick(timedelta(seconds=1))
+
     # Claiming the reward takes the balance below it; reaching it again is news.
     api.wallets_payload = [{"perspectiv_id": "Wallet100", "balance": 0}]
     await _refresh(hass, entry)
     assert hass.states.get("event.moja_biedronka_1234_reward_ready_to_claim").state == first_fired
+    freezer.tick(timedelta(seconds=1))
     api.wallets_payload = [{"perspectiv_id": "Wallet100", "balance": 10}]
     await _refresh(hass, entry)
     assert hass.states.get("event.moja_biedronka_1234_reward_ready_to_claim").state != first_fired
