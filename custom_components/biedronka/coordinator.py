@@ -25,10 +25,17 @@ from .const import (
     SHAKEOMAT_TYPES,
     STORAGE_VERSION,
 )
-from .exceptions import BiedronkaAuthError, BiedronkaCannotConnect, BiedronkaError
+from .exceptions import BiedronkaAuthError, BiedronkaError
 from .models import (
     EXPIRING_VOUCHER_STATUSES,
+    KIND_CARD,
+    KIND_LOYALTY,
     KIND_MESSAGE,
+    KIND_REWARD,
+    KIND_SHAKEOMARKA,
+    KIND_SHAKEOMAT,
+    KIND_STICKERS,
+    KIND_VOUCHER,
     OFFER_KINDS,
     RECEIPT_SOURCE_DETAILS,
     RECEIPT_SOURCE_E_RECEIPT,
@@ -60,9 +67,26 @@ from .models import (
 _LOGGER = logging.getLogger(__name__)
 WARSAW = ZoneInfo("Europe/Warsaw")
 ASSETS_TTL = timedelta(hours=24)
+# A failed poll keeps the previous result. Only a gap longer than this
+# turns the entity unknown.
+STALE_AFTER = timedelta(hours=24)
 EPOCH = datetime.min.replace(tzinfo=WARSAW)
 MAX_WALLET_MOVES = 10
 HISTORY_RETRY = timedelta(days=1)
+
+SECTION_USER = "user"
+SECTION_TRANSACTIONS = "transactions"
+SECTION_VOUCHERS = "vouchers"
+SECTION_SHAKEOMATS = "shakeomats"
+SECTION_LOYALTY = "loyalty"
+SECTION_MESSAGES = "messages"
+
+_SECTION_KINDS = {
+    SECTION_VOUCHERS: (KIND_VOUCHER,),
+    SECTION_SHAKEOMATS: (KIND_SHAKEOMAT, KIND_SHAKEOMARKA, KIND_CARD),
+    SECTION_LOYALTY: (KIND_LOYALTY, KIND_STICKERS, KIND_REWARD),
+    SECTION_MESSAGES: (KIND_MESSAGE,),
+}
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -188,67 +212,107 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
         self._receipts: dict[str, Receipt] = {}
         self._assets: dict[str, str] = {}
         self._assets_fetched: datetime | None = None
+        # section -> (when it last succeeded, value)
+        self._fresh: dict[str, tuple[datetime, Any]] = {}
+        self._stale_logged: set[str] = set()
+        self._succeeded = False
+        self._failure: str | None = None
 
     @property
     def auto_shakeomat(self) -> bool:
         return bool(self.entry.options.get(CONF_AUTO_SHAKEOMAT, DEFAULT_AUTO_SHAKEOMAT))
 
+    def _keep(self, section: str, value: Any, *, failed: bool) -> tuple[Any, bool]:
+        """Store a correct response, or reuse it until a newer one arrives.
+
+        A failed response keeps the previous value for 24 hours. After that
+        the section is unknown. Returns ``(value, known)``.
+        """
+        now = datetime.now(WARSAW)
+        if not failed:
+            self._fresh[section] = (now, value)
+            self._succeeded = True
+            self._stale_logged.discard(section)
+            return value, True
+        kept = self._fresh.get(section)
+        if kept is not None and now - kept[0] <= STALE_AFTER:
+            _LOGGER.debug(
+                "Keeping the last %s result; the API response was not usable",
+                section,
+            )
+            return kept[1], True
+        if kept is not None and section not in self._stale_logged:
+            self._stale_logged.add(section)
+            _LOGGER.warning(
+                "No correct Biedronka response for %s for over 24h; showing unknown",
+                section,
+            )
+        return None, False
+
+    def _unknown(self, section: str, unloaded: set[str]) -> None:
+        unloaded.update(_SECTION_KINDS.get(section, ()))
+
     async def _async_update_data(self) -> BiedronkaData:
         await self.async_load_rewards()
         try:
-            user = await self.api.users_me()
-            tx_page = await self.api.transactions(page=1)
+            data = await self._fetch_data()
         except BiedronkaAuthError as err:
             raise ConfigEntryAuthFailed from err
-        except BiedronkaCannotConnect as err:
-            raise UpdateFailed(str(err)) from err
-        except BiedronkaError as err:
-            raise UpdateFailed(str(err)) from err
+        # Never succeeded at all: let Home Assistant retry the first refresh.
+        # After a real result, keep publishing — stale sections are unknown
+        # instead of making every entity unavailable.
+        if data.known or self._succeeded:
+            return data
+        raise UpdateFailed(self._failure or "Biedronka API returned no data")
 
-        transactions = list(tx_page.get("transactions") or []) if isinstance(tx_page, dict) else []
-        last = transactions[0] if transactions else None
-        receipts = await self._sync_receipts(transactions)
-        details = (
-            receipts[0].payload
-            if receipts and isinstance(receipts[0].payload, dict)
-            else None
-        )
-
-        today_total = await self._today_total(transactions, tx_page if isinstance(tx_page, dict) else {})
-        vouchers = await self._load_vouchers()
-        shakeomats = await self._load_shakeomats()
-
-        if self.auto_shakeomat:
-            available = [offer for offer in shakeomats if offer.status == STATUS_AVAILABLE]
-            if await self._activate_offers(available, refresh=False):
-                shakeomats = await self._load_shakeomats()
-
-        data = BiedronkaData(
-            user=user if isinstance(user, dict) else {},
-            transactions=transactions,
-            last_transaction=last,
-            last_details=details,
-            today_total=today_total,
-            receipts=receipts,
-            vouchers=vouchers,
-        )
-        self._apply_shakeomats(data, shakeomats)
-        data.loyalty_actions = await self._load_loyalty_actions()
+    async def _fetch_data(self) -> BiedronkaData:
         # A category whose first load failed must not be marked as seen, or
         # everything already there would be announced once it loads.
         unloaded: set[str] = set()
-        messages = await self._load_messages()
-        if messages is None:
-            unloaded.add(KIND_MESSAGE)
-        data.messages = messages or []
-        data.wallet_moves = await self._load_wallet_moves(data.active_loyalty_actions)
-        balance_moves = await self._balance_moves(data.active_loyalty_actions)
-        ready = [
-            reward
-            for action in data.active_loyalty_actions
-            for reward in rewards_ready(action)
-        ]
-        rearmed = self._rearm_rewards(data.active_loyalty_actions)
+        user, user_known = await self._fetch_user()
+        transactions, tx_known = await self._fetch_transactions()
+        vouchers, vouchers_known = await self._fetch_vouchers(unloaded)
+        offers, shake_known = await self._fetch_shakeomats(unloaded)
+        actions, moves, loyalty_known = await self._fetch_loyalty(unloaded)
+        messages, messages_known = await self._fetch_messages(unloaded)
+
+        data = BiedronkaData(
+            user=user,
+            transactions=transactions["transactions"],
+            last_transaction=transactions["last"],
+            last_details=transactions["details"],
+            today_total=transactions["today"],
+            receipts=transactions["receipts"],
+            vouchers=vouchers,
+            loyalty_actions=actions,
+            messages=messages,
+            wallet_moves=moves,
+        )
+        self._apply_shakeomats(data, offers)
+        data.known = {
+            section
+            for section, known in (
+                (SECTION_USER, user_known),
+                (SECTION_TRANSACTIONS, tx_known),
+                (SECTION_VOUCHERS, vouchers_known),
+                (SECTION_SHAKEOMATS, shake_known),
+                (SECTION_LOYALTY, loyalty_known),
+                (SECTION_MESSAGES, messages_known),
+            )
+            if known
+        }
+        if loyalty_known:
+            balance_moves = await self._balance_moves(data.active_loyalty_actions)
+            ready = [
+                reward
+                for action in data.active_loyalty_actions
+                for reward in rewards_ready(action)
+            ]
+            rearmed = self._rearm_rewards(data.active_loyalty_actions)
+        else:
+            balance_moves = []
+            ready = []
+            rearmed = False
         data.new_offers = await self._find_new_offers(
             [
                 *data.messages,
@@ -271,6 +335,128 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
         if rearmed and not data.new_offers:
             await self._save_rewards()
         return data
+
+    async def _fetch_user(self) -> tuple[dict[str, Any], bool]:
+        failed = False
+        try:
+            user = await self.api.users_me()
+        except BiedronkaAuthError:
+            raise
+        except BiedronkaError as err:
+            self._failure = str(err)
+            _LOGGER.debug("Profile failed: %s", err)
+            user = None
+            failed = True
+        else:
+            if not isinstance(user, dict):
+                _LOGGER.debug("Profile payload was not usable")
+                user = None
+                failed = True
+        kept, known = self._keep(SECTION_USER, user, failed=failed)
+        return (kept if known else {}), known
+
+    async def _fetch_transactions(self) -> tuple[dict[str, Any], bool]:
+        failed = False
+        try:
+            tx_page = await self.api.transactions(page=1)
+        except BiedronkaAuthError:
+            raise
+        except BiedronkaError as err:
+            self._failure = str(err)
+            _LOGGER.debug("Transactions failed: %s", err)
+            tx_page = None
+            failed = True
+        else:
+            if not isinstance(tx_page, dict):
+                _LOGGER.debug("Transactions payload was not usable")
+                tx_page = None
+                failed = True
+        if not failed:
+            assert isinstance(tx_page, dict)
+            transactions = list(tx_page.get("transactions") or [])
+            last = transactions[0] if transactions else None
+            receipts = await self._sync_receipts(transactions)
+            details = (
+                receipts[0].payload
+                if receipts and isinstance(receipts[0].payload, dict)
+                else None
+            )
+            today_total = await self._today_total(transactions, tx_page)
+            bundle = {
+                "transactions": transactions,
+                "last": last,
+                "details": details,
+                "today": today_total,
+                "receipts": receipts,
+            }
+            kept, known = self._keep(SECTION_TRANSACTIONS, bundle, failed=False)
+        else:
+            kept, known = self._keep(SECTION_TRANSACTIONS, None, failed=True)
+        if not known:
+            kept = {
+                "transactions": [],
+                "last": None,
+                "details": None,
+                "today": 0.0,
+                "receipts": [],
+            }
+        return kept, known
+
+    async def _fetch_vouchers(self, unloaded: set[str]) -> tuple[list[Voucher], bool]:
+        loaded = await self._load_vouchers()
+        kept, known = self._keep(SECTION_VOUCHERS, loaded, failed=loaded is None)
+        if not known:
+            self._unknown(SECTION_VOUCHERS, unloaded)
+            return [], False
+        return kept, True
+
+    async def _fetch_shakeomats(
+        self, unloaded: set[str]
+    ) -> tuple[list[ShakeomatOffer], bool]:
+        offers = await self._load_shakeomats()
+        if offers is not None and self.auto_shakeomat:
+            available = [offer for offer in offers if offer.status == STATUS_AVAILABLE]
+            if await self._activate_offers(available, refresh=False):
+                refreshed = await self._load_shakeomats()
+                if refreshed is not None:
+                    offers = refreshed
+        if offers is not None:
+            payload = {"offers": offers, "card_offers": list(self._card_offers)}
+            kept, known = self._keep(SECTION_SHAKEOMATS, payload, failed=False)
+        else:
+            kept, known = self._keep(SECTION_SHAKEOMATS, None, failed=True)
+        if not known:
+            self._card_offers = []
+            self._unknown(SECTION_SHAKEOMATS, unloaded)
+            return [], False
+        self._card_offers = list(kept["card_offers"])
+        return kept["offers"], True
+
+    async def _fetch_loyalty(
+        self, unloaded: set[str]
+    ) -> tuple[list[LoyaltyAction], list[WalletMove], bool]:
+        actions = await self._load_loyalty_actions()
+        if actions is not None:
+            active = [action for action in actions if action.active]
+            moves = await self._load_wallet_moves(active)
+            payload = {"actions": actions, "moves": moves}
+            kept, known = self._keep(SECTION_LOYALTY, payload, failed=False)
+        else:
+            kept, known = self._keep(SECTION_LOYALTY, None, failed=True)
+        if not known:
+            self._unknown(SECTION_LOYALTY, unloaded)
+            return [], [], False
+        return kept["actions"], kept["moves"], True
+
+    async def _fetch_messages(
+        self, unloaded: set[str]
+    ) -> tuple[list[AppMessage], bool]:
+        loaded = await self._load_messages()
+        kept, known = self._keep(SECTION_MESSAGES, loaded, failed=loaded is None)
+        if not known:
+            self._unknown(SECTION_MESSAGES, unloaded)
+            return [], False
+        return kept, True
 
     async def _find_new_offers(
         self, offers: list[Any], unloaded: set[str] | None = None
@@ -296,18 +482,26 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
         await self._save_rewards()
         return [offer for offer in new if offer.category not in silent]
 
-    async def _load_loyalty_actions(self) -> list[LoyaltyAction]:
-        """Sticker / points campaigns with their wallet balance. Failures are not fatal."""
+    async def _load_loyalty_actions(self) -> list[LoyaltyAction] | None:
+        """Sticker / points campaigns with their wallet balance.
+
+        None when the actions or the wallets could not be loaded. An empty
+        list is a real response (no campaigns).
+        """
         try:
             payload = await self.api.loyalty_actions()
+        except BiedronkaAuthError:
+            raise
         except BiedronkaError as err:
             _LOGGER.debug("Loyalty actions failed: %s", err)
-            return []
+            return None
         try:
             balances = wallet_balances(await self.api.wallets())
+        except BiedronkaAuthError:
+            raise
         except BiedronkaError as err:
             _LOGGER.debug("Wallets failed: %s", err)
-            balances = {}
+            return None
         actions = (
             LoyaltyAction.from_payload(item, balances)
             for item in (payload if isinstance(payload, list) else [])
@@ -448,13 +642,15 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
         data.last_reward = history[0] if history else None
         data.card_offers = list(self._card_offers)
 
-    async def _load_vouchers(self) -> list[Voucher]:
-        """Coupons from the offers tab. A failure here leaves the rest of the refresh intact."""
+    async def _load_vouchers(self) -> list[Voucher] | None:
+        """Coupons from the offers tab. None when the request failed."""
         try:
             payload = await self.api.coupons()
+        except BiedronkaAuthError:
+            raise
         except BiedronkaError as err:
             _LOGGER.debug("Coupons failed: %s", err)
-            return []
+            return None
         coupons = payload.get("coupons") if isinstance(payload, dict) else None
         if not isinstance(coupons, list):
             return []
@@ -463,13 +659,22 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
         ]
         return sorted(vouchers, key=lambda voucher: _parse_dt(voucher.valid_to) or EPOCH)
 
-    async def _load_shakeomats(self) -> list[ShakeomatOffer]:
-        """Collect every Shakeomat card the dashboard exposes, however many there are."""
+    async def _load_shakeomats(self) -> list[ShakeomatOffer] | None:
+        """Collect every Shakeomat card the dashboard exposes.
+
+        None when the dashboard or one of its carousels did not respond, so
+        the caller can keep the previous cards instead of a partial set.
+        """
         try:
             dashboard = await self.api.dashboard()
+        except BiedronkaAuthError:
+            raise
         except BiedronkaError as err:
             _LOGGER.debug("Dashboard failed: %s", err)
-            return []
+            return None
+        if not isinstance(dashboard, (list, dict)):
+            _LOGGER.debug("Dashboard payload was not usable")
+            return None
 
         assets = await self._load_assets()
         now = datetime.now(WARSAW)
@@ -484,9 +689,11 @@ class BiedronkaCoordinator(DataUpdateCoordinator[BiedronkaData]):
                 continue
             try:
                 carousel = await self.api.carousel(str(param))
+            except BiedronkaAuthError:
+                raise
             except BiedronkaError as err:
                 _LOGGER.debug("Carousel %s failed: %s", param, err)
-                continue
+                return None
             items = carousel.get("items") if isinstance(carousel, dict) else None
             if not isinstance(items, list):
                 continue

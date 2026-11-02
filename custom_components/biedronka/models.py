@@ -1022,6 +1022,9 @@ class BiedronkaData:
     # Offers, vouchers and actions first seen in this refresh; event entities
     # announce them. Each has `category`, `key`, `valid_to` and `as_dict()`.
     new_offers: list[Any] = field(default_factory=list)
+    # Sections with a correct response, or still inside 24h of the last one.
+    # Anything missing here is unknown until the API answers properly again.
+    known: set[str] = field(default_factory=set)
 
     @property
     def store(self) -> BiedronkaStore | None:

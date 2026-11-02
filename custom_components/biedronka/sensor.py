@@ -16,6 +16,12 @@ from homeassistant.util import dt as dt_util
 
 from . import BiedronkaConfigEntry
 from .coordinator import (
+    SECTION_LOYALTY,
+    SECTION_MESSAGES,
+    SECTION_SHAKEOMATS,
+    SECTION_TRANSACTIONS,
+    SECTION_USER,
+    SECTION_VOUCHERS,
     WARSAW,
     BiedronkaCoordinator,
     _parse_dt,
@@ -72,11 +78,13 @@ class BiedronkaCardSensor(BiedronkaEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        return self.coordinator.data.user.get("card_number") if self.coordinator.data else None
+        data = self.known_data(SECTION_USER)
+        return data.user.get("card_number") if data else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        user = self.coordinator.data.user if self.coordinator.data else {}
+        data = self.known_data(SECTION_USER)
+        user = data.user if data else {}
         store = user.get("store") if isinstance(user.get("store"), dict) else {}
         return {
             "first_name": user.get("first_name"),
@@ -98,14 +106,15 @@ class BiedronkaLastTransactionSensor(BiedronkaEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        tx = self.coordinator.data.last_transaction if self.coordinator.data else None
+        data = self.known_data(SECTION_TRANSACTIONS)
+        tx = data.last_transaction if data else None
         if not tx:
             return None
         return float(tx.get("total_price") or 0)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_TRANSACTIONS)
         if not data or not data.last_transaction:
             return {}
         tx = data.last_transaction
@@ -146,8 +155,9 @@ class BiedronkaTodaySpendSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_today_spend"
 
     @property
-    def native_value(self) -> float:
-        return self.coordinator.data.today_total if self.coordinator.data else 0.0
+    def native_value(self) -> float | None:
+        data = self.known_data(SECTION_TRANSACTIONS)
+        return data.today_total if data else None
 
 
 class BiedronkaReceiptsSensor(BiedronkaEntity, SensorEntity):
@@ -162,12 +172,13 @@ class BiedronkaReceiptsSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_receipts"
 
     @property
-    def native_value(self) -> int:
-        return len(self.coordinator.data.receipts) if self.coordinator.data else 0
+    def native_value(self) -> int | None:
+        data = self.known_data(SECTION_TRANSACTIONS)
+        return len(data.receipts) if data else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_TRANSACTIONS)
         if not data:
             return {}
         return {"receipts": [receipt.as_dict() for receipt in data.receipts]}
@@ -185,13 +196,15 @@ class BiedronkaVouchersSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_vouchers"
 
     @property
-    def native_value(self) -> int:
-        vouchers = self.coordinator.data.vouchers if self.coordinator.data else []
-        return sum(1 for voucher in vouchers if voucher.status == VOUCHER_STATUS_READY)
+    def native_value(self) -> int | None:
+        data = self.known_data(SECTION_VOUCHERS)
+        if not data:
+            return None
+        return sum(1 for voucher in data.vouchers if voucher.status == VOUCHER_STATUS_READY)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_VOUCHERS)
         if not data:
             return {}
         return {"vouchers": [voucher.as_dict() for voucher in data.vouchers]}
@@ -208,7 +221,7 @@ class BiedronkaVoucherExpirySensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_voucher_expiry"
 
     def _nearest(self):
-        data = self.coordinator.data
+        data = self.known_data(SECTION_VOUCHERS)
         if not data:
             return None
         return nearest_expiring_voucher(data.vouchers, datetime.now(WARSAW))
@@ -243,14 +256,16 @@ class BiedronkaShakeomatSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_{kind}"
 
     @property
-    def native_value(self) -> str:
-        data = self.coordinator.data
-        current = data.current_of(self._kind) if data else None
+    def native_value(self) -> str | None:
+        data = self.known_data(SECTION_SHAKEOMATS)
+        if not data:
+            return None
+        current = data.current_of(self._kind)
         return current.status if current else STATUS_NONE
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_SHAKEOMATS)
         if not data:
             return {}
         cards = data.shakeomats_of(self._kind)
@@ -282,12 +297,13 @@ class BiedronkaShakeomatAvailableSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_shakeomat_available"
 
     @property
-    def native_value(self) -> int:
-        return len(self.coordinator.data.available_shakeomats) if self.coordinator.data else 0
+    def native_value(self) -> int | None:
+        data = self.known_data(SECTION_SHAKEOMATS)
+        return len(data.available_shakeomats) if data else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_SHAKEOMATS)
         if not data:
             return {}
         return {
@@ -339,12 +355,13 @@ class BiedronkaCardOffersSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_card_offers"
 
     @property
-    def native_value(self) -> int:
-        return len(self.coordinator.data.card_offers) if self.coordinator.data else 0
+    def native_value(self) -> int | None:
+        data = self.known_data(SECTION_SHAKEOMATS)
+        return len(data.card_offers) if data else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_SHAKEOMATS)
         if not data:
             return {}
         return {"offers": [offer.as_dict() for offer in data.card_offers]}
@@ -361,13 +378,13 @@ class BiedronkaLoyaltyActionsSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_loyalty_actions"
 
     @property
-    def native_value(self) -> int:
-        data = self.coordinator.data
-        return len(data.active_loyalty_actions) if data else 0
+    def native_value(self) -> int | None:
+        data = self.known_data(SECTION_LOYALTY)
+        return len(data.active_loyalty_actions) if data else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_LOYALTY)
         if not data:
             return {}
         return {"actions": [action.as_dict() for action in data.loyalty_actions]}
@@ -384,7 +401,7 @@ class BiedronkaLoyaltyBalanceSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_loyalty_balance"
 
     def _action(self):
-        data = self.coordinator.data
+        data = self.known_data(SECTION_LOYALTY)
         actions = data.active_loyalty_actions if data else []
         return next((a for a in actions if a.balance is not None), None)
 
@@ -396,7 +413,8 @@ class BiedronkaLoyaltyBalanceSensor(BiedronkaEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         action = self._action()
-        if not action:
+        data = self.known_data(SECTION_LOYALTY)
+        if not action or not data:
             return {}
         details = action.as_dict()
         return {
@@ -415,7 +433,7 @@ class BiedronkaLoyaltyBalanceSensor(BiedronkaEntity, SensorEntity):
             },
             "history": [
                 move.as_dict()
-                for move in self.coordinator.data.wallet_moves
+                for move in data.wallet_moves
                 if move.wallet_id == action.wallet_id
             ],
         }
@@ -432,13 +450,13 @@ class BiedronkaStoreHoursSensor(BiedronkaEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_USER)
         store = data.store if data else None
         return store.hours(dt_util.now().date().isoformat()) if store else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_USER)
         store = data.store if data else None
         return store.as_dict(dt_util.now().date().isoformat()) if store else {}
 
@@ -454,12 +472,13 @@ class BiedronkaMessagesSensor(BiedronkaEntity, SensorEntity):
         self._attr_unique_id = f"{self._card}_messages"
 
     @property
-    def native_value(self) -> int:
-        return len(self.coordinator.data.messages) if self.coordinator.data else 0
+    def native_value(self) -> int | None:
+        data = self.known_data(SECTION_MESSAGES)
+        return len(data.messages) if data else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_MESSAGES)
         if not data or not data.messages:
             return {}
         return {
