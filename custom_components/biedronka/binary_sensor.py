@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import BiedronkaConfigEntry
-from .coordinator import BiedronkaCoordinator
+from .coordinator import SECTION_USER, BiedronkaCoordinator
 from .entity import BiedronkaEntity
 
 PARALLEL_UPDATES = 0
@@ -35,13 +35,13 @@ class BiedronkaStoreOpenSensor(BiedronkaEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_USER)
         store = data.store if data else None
         return store.open_at(dt_util.now()) if store else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
+        data = self.known_data(SECTION_USER)
         store = data.store if data else None
         if not store:
             return {}

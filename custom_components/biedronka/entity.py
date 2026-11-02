@@ -7,6 +7,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import ATTRIBUTION, CONF_CARD_NUMBER, DOMAIN
 from .coordinator import BiedronkaCoordinator
+from .models import BiedronkaData
 
 
 class BiedronkaEntity(CoordinatorEntity[BiedronkaCoordinator]):
@@ -25,6 +26,13 @@ class BiedronkaEntity(CoordinatorEntity[BiedronkaCoordinator]):
             name=device_name(self._card),
             model="Karta lojalnościowa (nieoficjalne API)",
         )
+
+    def known_data(self, section: str) -> BiedronkaData | None:
+        """Coordinator data when `section` still has a correct result."""
+        data = self.coordinator.data
+        if data is None or section not in data.known:
+            return None
+        return data
 
 
 def device_name(card: str) -> str:
